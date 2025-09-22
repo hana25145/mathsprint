@@ -6,7 +6,16 @@ export default async function handler(req, res) {
   try {
     const uid = req.query?.uid;
     const mode = req.query?.mode;
+    const opCat = req.query?.opCat;
     if (!uid || !mode) {
+      return res.status(200).json({
+        games: 0, bestRecent: 0, avg: 0, p90: 0,
+        prLevel: 0, prStreak: 0, apmAvg: 0, apmBest: 0, totalCorrect: 0,
+      });
+    }
+
+    // 🔑 오직 ALL일 때만 DB 접근
+    if ((opCat ?? "").toUpperCase() !== "ALL") {
       return res.status(200).json({
         games: 0, bestRecent: 0, avg: 0, p90: 0,
         prLevel: 0, prStreak: 0, apmAvg: 0, apmBest: 0, totalCorrect: 0,
@@ -15,7 +24,7 @@ export default async function handler(req, res) {
 
     const db = await getDb();
     const rows = await db.collection("scores")
-      .find({ uid, mode })
+      .find({ uid, mode, opCat: "ALL" })
       .sort({ ts: -1 })
       .limit(50)
       .toArray();

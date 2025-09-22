@@ -4,11 +4,17 @@ export default async function handler(req, res) {
   try {
     const uid = req.query?.uid;
     const mode = req.query?.mode;
+    const opCat = req.query?.opCat;
     if (!uid || !mode) return res.status(200).json({ best: 0 });
+
+    // 🔑 오직 ALL일 때만 DB 접근
+    if ((opCat ?? "").toUpperCase() !== "ALL") {
+      return res.status(200).json({ best: 0 });
+    }
 
     const db = await getDb();
     const row = await db.collection("scores")
-      .find({ uid, mode })
+      .find({ uid, mode, opCat: "ALL" })
       .sort({ score: -1 })
       .limit(1)
       .next();
