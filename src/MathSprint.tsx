@@ -107,7 +107,15 @@ function makeDivisionEasyByAns(A: number): Problem {
   const k = ri(2, 12);
   return { a: A * k, b: k, op: "÷", answer: A };
 }
-
+async function submitScoreToServer(payload: any) {
+  const res = await fetch("/api/submitScore", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("서버 점수 제출 실패");
+  return res.json();
+}
 // dAns 자리의 "정답"이 나오도록 a+b를 구성하되,
 // 대부분의 자리에서 a_i + b_i + carry_in >= 10이 되게 만들어 난도↑
 function makeAdditionHardWithCarries(dAns: number): Problem {
@@ -569,7 +577,7 @@ function endGame() {
       ? ({ "+":"ADD","-":"SUB","×":"MUL","÷":"DIV"} as const)[activeOps[0]]
       : "MIXED";
 
-submitScoreSafe({
+submitScoreToServer({
   score,
   mode,
   levelMax,
@@ -577,10 +585,9 @@ submitScoreSafe({
   correctTotal,
   durationSec,
   opCat
-}).then(res => console.log("ok", res.data))
+}).then(res => console.log("ok", res))
   .catch(err => console.error("score submit failed", err));
-  }
-}
+  }}
   function levelUp() {
     setLevel((lv) => { const nxt = lv + 1; setLevelMax((m) => Math.max(m, nxt)); return nxt; });
     setCorrectThisLevel(0);
