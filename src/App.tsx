@@ -1,6 +1,18 @@
 import * as React from "react";
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 
+const auth = getAuth();
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    console.log("내 uid:", user.uid);
+  } else {
+    console.log("로그인 안 됨");
+  }
+});
+
+const uid = auth.currentUser?.uid;
 // 페이지 컴포넌트들
 import MathSprint from "@/MathSprint";
 import MyPage from "@/components/MyPage";
@@ -15,7 +27,7 @@ export default function App() {
           <h1 className="text-2xl font-bold">수학 스프린트</h1>
           <nav className="flex gap-4">
             <Link to="/" className="text-slate-600 hover:underline">게임</Link>
-            <Link to="/mypage" className="text-slate-600 hover:underline">마이페이지</Link>
+            <Link to={`/user/${uid}`} className="text-slate-600 hover:underline">마이페이지</Link>
             <Link to="/leaders" className="text-slate-600 hover:underline">리더보드 전체</Link>
           </nav>
         </header>
@@ -26,7 +38,7 @@ export default function App() {
             {/* 홈 화면 → MathSprint */}
             <Route path="/" element={<MathSprint mode="TIMED" />} />
             {/* 내 마이페이지 */}
-            <Route path="/mypage" element={<MyPage />} />
+            <Route path="/user/${me.uid}" element={<MyPage />} />
             {/* 친구/타인 마이페이지 열람 */}
             <Route path="/user/:uid" element={<MyPage />} />
             {/* 전체 리더보드 */}
