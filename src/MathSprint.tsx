@@ -10,7 +10,7 @@ import AuthButton from "@/components/AuthButton";
 import Leaderboard from "@/components/Leaderboard";
 import SearchUser from "@/components/SearchUser";
 import MyPage from "@/components/MyPage";
-import { ensureUserProfile, submitScore } from "./firebase";
+import { ensureUserProfile, submitScore, auth } from "./firebase";
 import { submitScoreSafe } from "./firebase";
 
 // ─────────────────────────────────────────────────────────────
@@ -564,8 +564,7 @@ export default function MathSprint() {
 
     setRunning(true);
   }
-
-function endGame() {
+async function endGame() {
   setRunning(false);
 
   if (!submittedRef.current) {
@@ -573,21 +572,43 @@ function endGame() {
     const durationSec = startAt ? Math.round((Date.now() - startAt) / 1000) : 0;
 
     const activeOps = OP_LIST.filter((op) => opsEnabled[op]);
-    const opCat = activeOps.length === 4 ? "ALL" : activeOps.length === 1
-      ? ({ "+":"ADD","-":"SUB","×":"MUL","÷":"DIV"} as const)[activeOps[0]]
-      : "MIXED";
+    const opCat =
+      activeOps.length === 4
+        ? "ALL"
+        : activeOps.length === 1
+        ? ({ "+": "ADD", "-": "SUB", "×": "MUL", "÷": "DIV" } as const)[
+            activeOps[0]
+          ]
+        : "MIXED";
 
-submitScoreToServer({
-  score,
-  mode,
-  levelMax,
-  streakMax,
-  correctTotal,
-  durationSec,
-  opCat
-}).then(res => console.log("ok", res))
-  .catch(err => console.error("score submit failed", err));
-  }}
+    try {
+      // 🔑 로그인된 유저 토큰 가져오기
+      const user = auth.currentUser;
+      if (!user) {
+        console.error("❌ 로그인된 유저 없음");
+        return;
+      }
+      const token = await user.getIdToken();
+
+      // 🔥 토큰 포함해서 서버로 제출
+      const res = await submitScoreToServer({
+        authToken: token,
+        score,
+        mode,
+        levelMax,
+        streakMax,
+        correctTotal,
+        durationSec,
+        opCat,
+      });
+
+      console.log("✅ 점수 제출 성공", res);
+    } catch (err) {
+      console.error("❌ 점수 제출 실패", err);
+    }
+  }
+}
+
   function levelUp() {
     setLevel((lv) => { const nxt = lv + 1; setLevelMax((m) => Math.max(m, nxt)); return nxt; });
     setCorrectThisLevel(0);
