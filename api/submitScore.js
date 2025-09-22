@@ -1,16 +1,11 @@
 import admin from "firebase-admin";
 
 if (!admin.apps.length) {
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert(
-        JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
-      ),
-    });
-    console.log("✅ Firebase Admin initialized");
-  } catch (e) {
-    console.error("❌ Firebase Admin init failed", e);
-  }
+  admin.initializeApp({
+    credential: admin.credential.cert(
+      JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
+    ),
+  });
 }
 
 const db = admin.firestore();
@@ -23,34 +18,15 @@ export default async function handler(req, res) {
   try {
     const { authToken, score, mode, levelMax, streakMax, correctTotal, durationSec, opCat } = req.body;
 
-    console.log("📩 Payload 수신:", { score, mode, levelMax, streakMax, correctTotal, durationSec, opCat });
-
     if (!authToken) {
-      console.error("❌ Missing authToken");
       return res.status(401).json({ error: "로그인 토큰 없음" });
     }
 
     // 토큰 검증
-    let decoded;
-    try {
-      decoded = await admin.auth().verifyIdToken(authToken);
-      console.log("✅ Token verified:", decoded.uid);
-    } catch (err) {
-      console.error("❌ Token verification failed:", err.message);
-      return res.status(401).json({ error: "토큰 검증 실패", details: err.message });
-    }
-
+    const decoded = await admin.auth().verifyIdToken(authToken);
     const uid = decoded.uid;
 
-    // 유효성 검사
-    if (!["TIMED", "HARD", "ENDLESS"].includes(mode)) {
-      return res.status(400).json({ error: "잘못된 mode" });
-    }
-    if (!Number.isFinite(score)) {
-      return res.status(400).json({ error: "비정상 점수" });
-    }
-
-    // Firestore 기록
+    // 점수 문서 (scores 컬렉션용)
     const doc = {
       uid,
       score,
@@ -63,17 +39,30 @@ export default async function handler(req, res) {
       ts: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    try {
-      console.log("📌 Firestore 기록 시도:", doc);
-      const ref = await db.collection("scores").add(doc);
-      console.log("✅ Firestore 기록 성공, ID:", ref.id);
-      return res.status(200).json({ ok: true, id: ref.id });
-    } catch (fireErr) {
-      console.error("🔥 Firestore 쓰기 실패:", fireErr);
-      return res.status(500).json({ error: "Firestore 쓰기 실패", details: fireErr.message });
-    }
+    // 1. 모든 기록 저장 (scores)
+    const ref = await db.collection("scores").add(doc);
+
+    // 2. leaders 업데이트 (최고 점수 유지)
+    const leaderRef = db.collection("leaders").doc(uid);
+    await db.runTransaction(async (t) => {
+      const snap = await t.get(leaderRef);
+      if (!snap.exists || (snap.data().score ?? 0) < score) {
+        t.set(
+          leaderRef,
+          {
+            uid,
+            score, // 최고 점수
+            mode,
+            ts: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    });
+
+    return res.status(200).json({ ok: true, id: ref.id });
   } catch (e) {
-    console.error("🔥 Uncaught server error:", e);
+    console.error("🔥 submitScore error:", e);
     return res.status(500).json({ error: "서버 에러", details: e.message });
   }
 }
