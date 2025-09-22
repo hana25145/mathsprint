@@ -10,7 +10,21 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
+// 허용할 도메인 목록
+const allowedOrigins = [
+  "https://mathsprint-ochre.vercel.app", // Vercel 배포
+  "http://localhost:5173",              // 로컬 개발
+  "http://localhost:5174"               // 로컬 다른 포트
+];
+
 export default async function handler(req, res) {
+  // 🔒 Origin 체크
+  const origin = req.headers.origin;
+  if (!allowedOrigins.includes(origin)) {
+    console.warn("❌ 차단된 Origin 요청:", origin);
+    return res.status(403).json({ error: "Forbidden origin" });
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -26,14 +40,13 @@ export default async function handler(req, res) {
     const decoded = await admin.auth().verifyIdToken(authToken);
     const uid = decoded.uid;
 
-    // 🧑 사용자 프로필 가져오기
+    // 🧑 사용자 프로필
     const userSnap = await db.collection("users").doc(uid).get();
     const userData = userSnap.exists ? userSnap.data() : {};
-
     const name = userData?.name || "익명";
     const tag = userData?.tag || "0000";
 
-    // 📌 scores 컬렉션 기록
+    // 📌 scores 저장
     const doc = {
       uid,
       score,
@@ -47,7 +60,7 @@ export default async function handler(req, res) {
     };
     const ref = await db.collection("scores").add(doc);
 
-    // 📌 leaders 문서 ID = {mode}_{opCat}_{uid}
+    // 📌 leaders 저장 (ID: mode_opCat_uid)
     const leaderId = `${mode}_${opCat}_${uid}`;
     const leaderRef = db.collection("leaders").doc(leaderId);
 
@@ -56,7 +69,6 @@ export default async function handler(req, res) {
       const prevBest = snap.exists ? snap.data().best || 0 : 0;
 
       if (score > prevBest) {
-        // 최고 점수 갱신
         t.set(
           leaderRef,
           {
@@ -71,7 +83,6 @@ export default async function handler(req, res) {
           { merge: true }
         );
       } else {
-        // 최고 점수 갱신은 없지만 updatedAt 업데이트
         t.set(
           leaderRef,
           {
