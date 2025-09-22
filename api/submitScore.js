@@ -60,7 +60,7 @@ export default async function handler(req, res) {
       correctTotal,
       durationSec,
       opCat,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      ts: admin.firestore.FieldValue.serverTimestamp(),
     };
 
     try {
