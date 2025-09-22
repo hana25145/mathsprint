@@ -18,13 +18,27 @@ const allowedOrigins = [
 ];
 
 export default async function handler(req, res) {
-  // 🔒 Origin 체크
   const origin = req.headers.origin;
+
+  // ✅ 허용된 origin에만 CORS 헤더 부여
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  // ✅ CORS preflight 요청 처리
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  // ✅ 차단 로직
   if (!allowedOrigins.includes(origin)) {
     console.warn("❌ 차단된 Origin 요청:", origin);
     return res.status(403).json({ error: "Forbidden origin" });
   }
 
+  // ✅ 실제 POST 처리
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
