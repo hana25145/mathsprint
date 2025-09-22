@@ -32,16 +32,15 @@ async function fetchProfile(uid: string): Promise<UserProfile | null> {
   if (!res.ok) return null;
   return await res.json();
 }
-
 async function fetchBest(uid: string, mode: Mode): Promise<number> {
-  const res = await fetch(`/api/scores/best?uid=${uid}&mode=${mode}`);
+  const res = await fetch(`/api/scores/best?uid=${uid}&mode=${mode}&opCat=ALL`);
   if (!res.ok) return 0;
   const data = await res.json();
   return data.best ?? 0;
 }
 
 async function fetchStats(uid: string, mode: Mode): Promise<Stats> {
-  const res = await fetch(`/api/scores/stats?uid=${uid}&mode=${mode}`);
+  const res = await fetch(`/api/scores/stats?uid=${uid}&mode=${mode}&opCat=ALL`);
   if (!res.ok) return {
     games: 0, bestRecent: 0, avg: 0, p90: 0, prLevel: 0, prStreak: 0,
     apmAvg: 0, apmBest: 0, totalCorrect: 0
