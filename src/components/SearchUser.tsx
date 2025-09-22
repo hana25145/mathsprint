@@ -1,9 +1,15 @@
+// src/components/SearchUser.tsx
 import * as React from "react";
 import { Link } from "react-router-dom";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { addFriend, searchUsersByPrefix, type UserProfile } from "@/firebase";
+
+type UserProfile = {
+  uid: string;
+  name: string;
+  tag: string;
+};
 
 export default function SearchUser() {
   const [term, setTerm] = React.useState("");
@@ -20,7 +26,9 @@ export default function SearchUser() {
     setLoading(true);
     setError(null);
     try {
-      const data = await searchUsersByPrefix(q);
+      const res = await fetch(`/api/users/search?prefix=${encodeURIComponent(q)}`);
+      if (!res.ok) throw new Error("검색 실패");
+      const data: UserProfile[] = await res.json();
       setRows(data);
     } catch (e: any) {
       setError(e?.message ?? "검색 중 오류가 발생했습니다.");
@@ -37,21 +45,11 @@ export default function SearchUser() {
     }
   };
 
-  const onAddFriend = async (uid: string) => {
-    try {
-      await addFriend(uid);
-    } catch (e) {
-      // 실패해도 UI는 유지 (필요시 토스트 연결)
-      console.error(e);
-    }
-  };
-
   return (
     <Card>
       <CardHeader>
         <CardTitle>유저 검색</CardTitle>
       </CardHeader>
-
       <CardContent className="space-y-3">
         {/* 검색 바 */}
         <div className="flex gap-2 text-xs">
@@ -63,42 +61,29 @@ export default function SearchUser() {
             className="text-xs h-8"
             aria-label="닉네임 검색어"
           />
-        <Button
-          onClick={doSearch}
-          disabled={loading}
-          className="text-xs h-8 px-3 whitespace-nowrap bg-black text-white hover:bg-black/90"
-        >
-          {loading ? "검색중..." : "검색"}
-        </Button>
+          <Button onClick={doSearch} disabled={loading} className="text-xs h-8 px-3 bg-black text-white">
+            {loading ? "검색중..." : "검색"}
+          </Button>
         </div>
 
         {/* 에러 메시지 */}
-        {error && <div className="text-[--accent] text-xs">{error}</div>}
+        {error && <div className="text-red-500 text-xs">{error}</div>}
 
         {/* 결과 목록 */}
         <ul className="space-y-2 text-sm">
           {rows.map((u) => (
             <li key={u.uid} className="flex items-center justify-between gap-2">
-              <span className="truncate max-w-[60%]">
-                {u.name}#{u.tag}
-              </span>
-
-              <div className="flex items-center gap-2">
-                {/* 프로필 열람 링크 */}
-                <Link
-                  to={`/user/${u.uid}`}
-                  className="h-8 px-2 inline-flex items-center rounded-md border border-[--border] bg-[--card] text-[--fg] hover:bg-[--muted] text-xs"
-                  aria-label={`${u.name} 프로필 열람`}
-                >
-                  열람
-                </Link>
-
-              </div>
+              <span className="truncate max-w-[60%]">{u.name}#{u.tag}</span>
+              <Link
+                to={`/user/${u.uid}`}
+                className="h-8 px-2 inline-flex items-center rounded-md border text-xs"
+              >
+                열람
+              </Link>
             </li>
           ))}
-
           {!loading && rows.length === 0 && (
-            <div className="text-[--fg]/60 text-xs">검색 결과 없음</div>
+            <div className="text-gray-500 text-xs">검색 결과 없음</div>
           )}
         </ul>
       </CardContent>

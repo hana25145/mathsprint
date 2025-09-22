@@ -576,39 +576,38 @@ async function endGame() {
       activeOps.length === 4
         ? "ALL"
         : activeOps.length === 1
-        ? ({ "+": "ADD", "-": "SUB", "×": "MUL", "÷": "DIV" } as const)[
-            activeOps[0]
-          ]
+        ? ({ "+": "ADD", "-": "SUB", "×": "MUL", "÷": "DIV" } as const)[activeOps[0]]
         : "MIXED";
 
-    try {
-      // 🔑 로그인된 유저 토큰 가져오기
-      const user = auth.currentUser;
-      if (!user) {
-        console.error("❌ 로그인된 유저 없음");
-        return;
-      }
-      const token = await user.getIdToken();
+    const uid = auth.currentUser?.uid; // 🔑 여기 추가
 
-      // 🔥 토큰 포함해서 서버로 제출
-      const res = await submitScoreToServer({
-        authToken: token,
-        score,
-        mode,
-        levelMax,
-        streakMax,
-        correctTotal,
-        durationSec,
-        opCat,
+    try {
+      const res = await fetch("/api/submitScore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uid,
+          score,
+          mode,
+          levelMax,
+          streakMax,
+          correctTotal,
+          durationSec,
+          opCat,
+        }),
       });
 
-      console.log("✅ 점수 제출 성공", res);
+      const data = await res.json();
+      if (res.ok) {
+        console.log("✅ 점수 제출 성공", data);
+      } else {
+        console.error("❌ 점수 제출 실패", data);
+      }
     } catch (err) {
-      console.error("❌ 점수 제출 실패", err);
+      console.error("❌ 점수 제출 중 오류", err);
     }
   }
 }
-
   function levelUp() {
     setLevel((lv) => { const nxt = lv + 1; setLevelMax((m) => Math.max(m, nxt)); return nxt; });
     setCorrectThisLevel(0);
