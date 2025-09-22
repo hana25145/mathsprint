@@ -22,11 +22,18 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "로그인 토큰 없음" });
     }
 
-    // 토큰 검증
+    // 🔑 Firebase ID 토큰 검증
     const decoded = await admin.auth().verifyIdToken(authToken);
     const uid = decoded.uid;
 
-    // 점수 문서 (scores 컬렉션용)
+    // 🧑 사용자 프로필 가져오기
+    const userSnap = await db.collection("users").doc(uid).get();
+    const userData = userSnap.exists ? userSnap.data() : {};
+
+    const name = userData?.name || "익명";
+    const tag = userData?.tag || "0000";
+
+    // 📌 scores 컬렉션 기록
     const doc = {
       uid,
       score,
@@ -38,22 +45,43 @@ export default async function handler(req, res) {
       opCat,
       ts: admin.firestore.FieldValue.serverTimestamp(),
     };
-
-    // 1. 모든 기록 저장 (scores)
     const ref = await db.collection("scores").add(doc);
 
-    // 2. leaders 업데이트 (최고 점수 유지)
-    const leaderRef = db.collection("leaders").doc(uid);
+    // 📌 leaders 문서 ID = {mode}_{opCat}_{uid}
+    const leaderId = `${mode}_${opCat}_${uid}`;
+    const leaderRef = db.collection("leaders").doc(leaderId);
+
     await db.runTransaction(async (t) => {
       const snap = await t.get(leaderRef);
-      if (!snap.exists || (snap.data().score ?? 0) < score) {
+      const prevBest = snap.exists ? snap.data().best || 0 : 0;
+
+      if (score > prevBest) {
+        // 최고 점수 갱신
         t.set(
           leaderRef,
           {
             uid,
-            score, // 최고 점수
+            best: score,
             mode,
-            ts: admin.firestore.FieldValue.serverTimestamp(),
+            opCat,
+            name,
+            tag,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } else {
+        // 최고 점수 갱신은 없지만 updatedAt 업데이트
+        t.set(
+          leaderRef,
+          {
+            uid,
+            best: prevBest,
+            mode,
+            opCat,
+            name,
+            tag,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true }
         );
