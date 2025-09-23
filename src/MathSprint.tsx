@@ -201,15 +201,163 @@ function genProblemBIN(level: number): BinProblem {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// 모드 라우팅
-// ─────────────────────────────────────────────────────────────
-function makeProblem(mode: Mode, level: number, enabled: Record<Op, boolean>): Problem {
-  if (mode === "BIN") return genProblemBIN(level);
-  if (mode === "HARD") {
-    // 간단화: 여기서는 예시로 normal 생성 사용(필요 시 하드 생성기 연결)
-    return genProblemNormal(Math.max(2, level + 1), enabled);
+
+// ★ Lv→정답 자릿수 곡선(하드)
+function dAnsForHard(level: number) {
+  if (level <= 3) return 4;
+  if (level <= 6) return 5;
+  if (level <= 9) return 6;
+  return 6 + Math.floor((level - 9) / 2); // 상한 7자리 정도
+}
+
+// ★ 덧셈: 자리올림(carry) 많이 생기도록
+function makeAdditionHardWithCarries(dAns: number) {
+  const n = Math.max(2, dAns);
+  const carryDensity = 0.75;
+  let carry = 0; const a: number[] = []; const b: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const top = i === n - 1;
+    if (top) {
+      const maxTop = 9 - carry - 1;
+      const ai = ri(1, Math.max(1, Math.min(8, maxTop)));
+      const bi = ri(0, Math.max(0, maxTop - ai));
+      a.push(ai); b.push(bi); carry = 0;
+    } else {
+      const forceCarry = Math.random() < carryDensity;
+      if (forceCarry) {
+        const target = ri(10, 17);
+        const ai = ri(1, 9);
+        const bi = Math.min(9, target - ai - carry);
+        a.push(ai); b.push(bi); carry = 1;
+      } else {
+        const ai = ri(0, 9);
+        const bi = ri(0, Math.max(0, 9 - ai - carry));
+        a.push(ai); b.push(bi); carry = 0;
+      }
+    }
   }
+  const build = (ds: number[]) => Number(ds.slice().reverse().join(""));
+  const A = build(a), B = build(b), S = A + B;
+  if (String(S).length !== n) {
+    const sum = randDigits(dAns);
+    const small = ri(1, Math.min(99, sum - 1));
+    return { kind: "ARITH" as const, a: small, b: sum - small, op: "+", answer: sum };
+  }
+  return { kind: "ARITH" as const, a: A, b: B, op: "+", answer: S };
+}
+
+// ★ 뺄셈: 자리내림(borrow) 자주 유발
+function makeSubtractionHardWithBorrows(dAns: number) {
+  const n = Math.max(2, dAns), borrowDensity = 0.75;
+  const R = randDigits(n);
+  const rd = String(R).split("").reverse().map(Number);
+  let borrow = 0; const a: number[] = []; const b: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const top = i === n - 1;
+    if (top) {
+      const bi = ri(0, Math.max(0, 9 - rd[i] - borrow - 1));
+      const sum = rd[i] + bi + borrow;
+      const ai = sum; a.push(ai); b.push(bi); borrow = 0;
+    } else {
+      const forceBorrow = Math.random() < borrowDensity;
+      if (forceBorrow) {
+        const target = ri(10, 17);
+        const bi = Math.min(9, target - rd[i] - borrow);
+        const ai = (rd[i] + bi + borrow) - 10;
+        a.push(ai); b.push(bi); borrow = 1;
+      } else {
+        const bi = ri(0, Math.max(0, 9 - rd[i] - borrow));
+        const ai = rd[i] + bi + borrow;
+        a.push(ai); b.push(bi); borrow = 0;
+      }
+    }
+  }
+  const build = (ds: number[]) => Number(ds.slice().reverse().join(""));
+  const A = build(a), B = build(b), Rchk = A - B;
+  if (Rchk !== R || String(R).length !== n) {
+    const diff = randDigits(dAns); const sub = ri(1, Math.min(99, diff));
+    return { kind: "ARITH" as const, a: diff + sub, b: sub, op: "-", answer: diff };
+  }
+  return { kind: "ARITH" as const, a: A, b: B, op: "-", answer: R };
+}
+
+// ★ 곱셈: 큰수×큰수 위주
+function makeMultiplicationWithAnsDigits(dAns: number, level: number) {
+  for (let tries = 0; tries < 80; tries++) {
+    const minDigit = Math.max(2, Math.floor(dAns / 2));
+    const da = ri(minDigit, Math.max(minDigit, Math.floor(dAns / 2)));
+    const db = Math.max(1, dAns - da + (Math.random() < 0.5 ? 0 : -1));
+    const a = randDigits(da), b = randDigits(db), A = a * b;
+    if (digits(A) === dAns) return { kind: "ARith" as any, a, b, op: "×" as Op, answer: A };
+  }
+  const A = randDigits(dAns);
+  for (let f = 2; f <= 999; f++) if (A % f === 0)
+    return { kind: "ARITH" as const, a: Math.floor(A / f), b: f, op: "×", answer: A };
+  // 실패시 덧셈으로 폴백
+  const sum = randDigits(dAns); const x = ri(1, Math.min(99, sum - 1));
+  return { kind: "ARITH" as const, a: x, b: sum - x, op: "+", answer: sum };
+}
+
+// ★ 나눗셈: 몫 자릿수 dAns 고정 + 제수/피제수 상한
+function makeDivisionHard(level: number, dAns: number) {
+  const q = randDigits(dAns);
+  function randWithDigits(d: number) {
+    const min = 10 ** (d - 1); const max = 10 ** d - 1;
+    return ri(min, max);
+  }
+  function divDigitsRange(L: number, dq: number): [number, number] {
+    if (L <= 1) return [1, 1];
+    if (L <= 3) return [1, 2];
+    if (L <= 5) return [2, 3];
+    if (L <= 7) return [3, 4];
+    const lo = Math.min(dq, 3 + Math.floor((L - 7) / 2));
+    const hi = Math.min(dq + Math.floor((L - 7) / 2), lo + 2);
+    return [Math.max(1, lo), Math.max(lo, hi)];
+  }
+  const [divLo, divHi] = divDigitsRange(level, dAns);
+  const dividendCap = 3 + Math.ceil((level + 1) / 2);
+  const pickDivDigits = (lo: number, hi: number) => {
+    const mid = (lo + hi) / 2; const bag: number[] = [];
+    for (let d = lo; d <= hi; d++) {
+      const w = 1 / (1 + Math.abs(d - mid));
+      const copies = Math.max(1, Math.round(w * 6));
+      for (let i = 0; i < copies; i++) bag.push(d);
+    }
+    return pick(bag);
+  };
+  for (let t = 0; t < 60; t++) {
+    const divDigits = pickDivDigits(divLo, divHi);
+    const divisor = randWithDigits(divDigits);
+    const dividend = q * divisor;
+    if (digits(dividend) <= dividendCap)
+      return { kind: "ARITH" as const, a: dividend, b: divisor, op: "÷", answer: q };
+  }
+  const divDigits = Math.min(divHi, Math.max(divLo, divLo + 1));
+  const divisor = randWithDigits(divDigits);
+  const dividend = q * divisor;
+  return { kind: "ARITH" as const, a: dividend, b: divisor, op: "÷", answer: q };
+}
+
+// ★ 하드 모드 전용 문제 생성기
+function genProblemHard(level: number, enabled: Record<Op, boolean>) {
+  const dAns = dAnsForHard(level);
+  const ops = (["+","-","×","÷"] as Op[]).filter((o) => enabled[o]);
+  const op = ops.length ? pick(ops) : "+";
+  switch (op) {
+    case "+": return makeAdditionHardWithCarries(dAns);
+    case "-": return makeSubtractionHardWithBorrows(dAns);
+    case "×": return makeMultiplicationWithAnsDigits(Math.max(2, dAns), level);
+    case "÷": return makeDivisionHard(level, dAns);
+    default:  return makeAdditionHardWithCarries(dAns);
+  }
+}
+
+// ──────────────────────────────
+// 2) 모드 라우팅 교체
+// ──────────────────────────────
+function makeProblem(mode: Mode, level: number, enabled: Record<Op, boolean>): Problem {
+  if (mode === "BIN")  return genProblemBIN(level);           // 기존 그대로
+  if (mode === "HARD") return genProblemHard(level, enabled) as Problem; // ★ 여기!
   return genProblemNormal(level, enabled);
 }
 
