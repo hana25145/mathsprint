@@ -288,7 +288,7 @@ function makeMultiplicationWithAnsDigits(dAns: number, level: number) {
     const da = ri(minDigit, Math.max(minDigit, Math.floor(dAns / 2)));
     const db = Math.max(1, dAns - da + (Math.random() < 0.5 ? 0 : -1));
     const a = randDigits(da), b = randDigits(db), A = a * b;
-    if (digits(A) === dAns) return { kind: "ARith" as any, a, b, op: "×" as Op, answer: A };
+    if (digits(A) === dAns) return { kind: "ARITH" as any, a, b, op: "×" as Op, answer: A };
   }
   const A = randDigits(dAns);
   for (let f = 2; f <= 999; f++) if (A % f === 0)
