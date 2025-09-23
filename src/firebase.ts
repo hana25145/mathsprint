@@ -9,6 +9,7 @@ import {
   signInWithPopup,
   signOut,
   onAuthStateChanged,
+  type User,
 } from "firebase/auth";
 import {
   getFirestore,
@@ -351,6 +352,9 @@ export async function fetchUserProfile(uid: string) {
 onAuthStateChanged(auth, (u) => {
   if (u) ensureUserProfile().catch(() => {});
 });
+export function onAuth(cb: (user: User | null) => void) {
+  return onAuthStateChanged(auth, cb);
+}
 
 export type ScoreRow = {
   score: number;
@@ -383,7 +387,64 @@ export function subscribeMyScores(
     cb(rows);
   });
 }
+async function getIdTokenOrThrow(): Promise<string> {
+  const user =
+    auth.currentUser ??
+    await new Promise<User | null>((resolve) => {   // ⬅️ 여기
+      const unsub = onAuthStateChanged(
+        auth,
+        (u) => { unsub(); resolve(u); },
+        () => { unsub(); resolve(null); }
+      );
+    });
 
+  if (!user) throw new Error("로그인이 필요합니다.");
+  return user.getIdToken();
+}
 
-const functions = getFunctions(app, "us-central1");
-export const submitScoreSafe = httpsCallable(functions, "submitScoreSafe");
+const API_BASE =
+  (import.meta as any).env?.VITE_API_BASE ??
+  process.env.NEXT_PUBLIC_API_BASE ??
+  ""; // ""면 동일 오리진 사용: /api/submitScore
+
+export async function submitScoreSafe(payload: {
+  score: number;
+  mode: string;
+  levelMax: number;
+  streakMax: number;
+  correctTotal: number;
+  durationSec: number;
+  opCat: string;
+}) {
+  let idToken = await getIdTokenOrThrow();
+
+  const tryPost = async (token: string) => {
+    const res = await fetch(`${API_BASE}/api/submitScore`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...payload, authToken: token }), // ⬅️ 서버가 기대하는 키
+    });
+    // 401이면 만료 토큰 가능성 → 한 번 강제 갱신 후 재시도
+    if (res.status === 401) {
+      throw new Error("401");
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error || `submit failed: ${res.status}`);
+    }
+    return res.json();
+  };
+
+  try {
+    return await tryPost(idToken);
+  } catch (e: any) {
+    if (e?.message === "401") {
+      // 강제 갱신 후 1회 재시도
+      const user = auth.currentUser;
+      if (!user) throw new Error("로그인이 필요합니다.");
+      idToken = await user.getIdToken(true);
+      return await tryPost(idToken);
+    }
+    throw e;
+  }
+}

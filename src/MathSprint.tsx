@@ -10,7 +10,7 @@ import AuthButton from "@/components/AuthButton";
 import Leaderboard from "@/components/Leaderboard";
 import SearchUser from "@/components/SearchUser";
 import MyPage from "@/components/MyPage";
-import { ensureUserProfile, submitScore, auth } from "./firebase";
+import { ensureUserProfile, submitScore } from "./firebase";
 import { submitScoreSafe } from "./firebase";
 
 // ─────────────────────────────────────────────────────────────
@@ -107,15 +107,7 @@ function makeDivisionEasyByAns(A: number): Problem {
   const k = ri(2, 12);
   return { a: A * k, b: k, op: "÷", answer: A };
 }
-async function submitScoreToServer(payload: any) {
-  const res = await fetch("/api/submitScore", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("서버 점수 제출 실패");
-  return res.json();
-}
+
 // dAns 자리의 "정답"이 나오도록 a+b를 구성하되,
 // 대부분의 자리에서 a_i + b_i + carry_in >= 10이 되게 만들어 난도↑
 function makeAdditionHardWithCarries(dAns: number): Problem {
@@ -564,7 +556,8 @@ export default function MathSprint() {
 
     setRunning(true);
   }
-async function endGame() {
+
+function endGame() {
   setRunning(false);
 
   if (!submittedRef.current) {
@@ -572,40 +565,20 @@ async function endGame() {
     const durationSec = startAt ? Math.round((Date.now() - startAt) / 1000) : 0;
 
     const activeOps = OP_LIST.filter((op) => opsEnabled[op]);
-    const opCat =
-      activeOps.length === 4
-        ? "ALL"
-        : activeOps.length === 1
-        ? ({ "+": "ADD", "-": "SUB", "×": "MUL", "÷": "DIV" } as const)[activeOps[0]]
-        : "MIXED";
+    const opCat = activeOps.length === 4 ? "ALL" : activeOps.length === 1
+      ? ({ "+":"ADD","-":"SUB","×":"MUL","÷":"DIV"} as const)[activeOps[0]]
+      : "MIXED";
 
-    const uid = auth.currentUser?.uid; // 🔑 여기 추가
-
-    try {
-      const res = await fetch("/api/submitScore", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          uid,
-          score,
-          mode,
-          levelMax,
-          streakMax,
-          correctTotal,
-          durationSec,
-          opCat,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        console.log("✅ 점수 제출 성공", data);
-      } else {
-        console.error("❌ 점수 제출 실패", data);
-      }
-    } catch (err) {
-      console.error("❌ 점수 제출 중 오류", err);
-    }
+submitScoreSafe({
+  score,
+  mode,
+  levelMax,
+  streakMax,
+  correctTotal,
+  durationSec,
+  opCat
+}).then(res => console.log("ok", res.data))
+  .catch(err => console.error("score submit failed", err));
   }
 }
   function levelUp() {
