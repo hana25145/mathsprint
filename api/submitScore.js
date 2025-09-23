@@ -24,6 +24,7 @@ const BANNED_EMAILS = new Set([
   "jinhyung110@gmail.com",
   "has_25038@hana.hs.kr",
   "wqq69320@gmail.com",
+  "wbk0107@gmail.com"
 ].map(s => s.toLowerCase()));
 const BANNED_DOMAINS = new Set(
   (process.env.BANNED_DOMAINS || "")

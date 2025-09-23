@@ -1,4 +1,4 @@
-// src/components/MyPage.tsx — 마이페이지(닉네임 변경 지원 + 상세 통계/그래프 유지)
+// src/components/MyPage.tsx
 import * as React from "react";
 import { useParams } from "react-router-dom";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -29,18 +29,18 @@ import {
 } from "firebase/firestore";
 
 /* ─────────────────────────────────────────────────────────────
-   모드 타입
+   모드 타입 (★ BIN 추가)
 ───────────────────────────────────────────────────────────── */
-type Mode = "TIMED" | "HARD";
+type Mode = "TIMED" | "HARD" | "BIN";
 
 /* ─────────────────────────────────────────────────────────────
    최고점 (ALL only)
 ───────────────────────────────────────────────────────────── */
-function useBestAll(uid: string | null | undefined, mode: Mode) {
+function useBestAll(uid: string | null | undefined, mode: Exclude<Mode, "BIN">) {
   const [best, setBest] = React.useState<number>(0);
   React.useEffect(() => {
     if (!uid) return;
-    const q = query(
+    const qy = query(
       collection(db, "scores"),
       where("uid", "==", uid),
       where("mode", "==", mode),
@@ -48,7 +48,7 @@ function useBestAll(uid: string | null | undefined, mode: Mode) {
       orderBy("score", "desc"),
       limit(1)
     );
-    const unsub = onSnapshot(q, (snap) => {
+    const unsub = onSnapshot(qy, (snap) => {
       const doc = snap.docs[0];
       setBest(doc ? Number((doc.data() as any).score ?? 0) : 0);
     });
@@ -58,7 +58,31 @@ function useBestAll(uid: string | null | undefined, mode: Mode) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   상세 통계: 최근 50판(ALL) 집계
+   최고점 (★ BIN 전용: opCat='BIN')
+───────────────────────────────────────────────────────────── */
+function useBestBIN(uid: string | null | undefined) {
+  const [best, setBest] = React.useState<number>(0);
+  React.useEffect(() => {
+    if (!uid) return;
+    const qy = query(
+      collection(db, "scores"),
+      where("uid", "==", uid),
+      where("mode", "==", "BIN"),
+      where("opCat", "==", "BIN"),
+      orderBy("score", "desc"),
+      limit(1)
+    );
+    const unsub = onSnapshot(qy, (snap) => {
+      const d = snap.docs[0];
+      setBest(d ? Number((d.data() as any).score ?? 0) : 0);
+    });
+    return () => unsub();
+  }, [uid]);
+  return best;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   상세 통계: 최근 50판(ALL) 집계 (원본 유지)
 ───────────────────────────────────────────────────────────── */
 type ScoreAgg = {
   score: number;
@@ -66,11 +90,11 @@ type ScoreAgg = {
   streakMax?: number;
   correctTotal?: number;
   durationSec?: number;
-  createdAt?: any;  // Firestore Timestamp
+  createdAt?: any;  // Firestore Timestamp (프로젝트 기존 필드)
   opCat?: string;
 };
 
-async function fetchRecentFallback(uid: string, mode: Mode, n = 50) {
+async function fetchRecentFallback(uid: string, mode: Exclude<Mode, "BIN">, n = 50) {
   try {
     const s = await getDocs(
       query(
@@ -82,10 +106,7 @@ async function fetchRecentFallback(uid: string, mode: Mode, n = 50) {
     );
     const rows = s.docs.map((d) => d.data() as ScoreAgg);
     const filtered = rows.filter((r) => (r.opCat ?? "ALL") === "ALL");
-    filtered.sort(
-      (a, b) =>
-        (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0)
-    );
+    filtered.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
     return filtered.slice(0, n);
   } catch (e) {
     console.error("[useModeStats fallback] getDocs error", e);
@@ -93,7 +114,7 @@ async function fetchRecentFallback(uid: string, mode: Mode, n = 50) {
   }
 }
 
-function useModeStats(uid: string | null | undefined, mode: Mode) {
+function useModeStats(uid: string | null | undefined, mode: Exclude<Mode, "BIN">) {
   const [rows, setRows] = React.useState<ScoreAgg[]>([]);
 
   React.useEffect(() => {
@@ -119,8 +140,7 @@ function useModeStats(uid: string | null | undefined, mode: Mode) {
           setRows(data);
         }
       },
-      async (err) => {
-        console.warn("[useModeStats] snapshot error:", err?.code ?? err);
+      async (_err) => {
         const fb = await fetchRecentFallback(uid, mode, 50);
         setRows(fb);
       }
@@ -132,51 +152,111 @@ function useModeStats(uid: string | null | undefined, mode: Mode) {
     const games = rows.length;
     const scores = rows.map((r) => r.score);
     const bestRecent = scores.length ? Math.max(...scores) : 0;
-    const avg = scores.length
-      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
-      : 0;
+    const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
     const p90 = scores.length
-      ? Math.round(
-          [...scores].sort((a, b) => a - b)[
-            Math.floor((scores.length - 1) * 0.9)
-          ]
-        )
+      ? Math.round([...scores].sort((a, b) => a - b)[Math.floor((scores.length - 1) * 0.9)])
       : 0;
 
     const prLevel = rows.reduce((m, r) => Math.max(m, r.levelMax ?? 0), 0);
     const prStreak = rows.reduce((m, r) => Math.max(m, r.streakMax ?? 0), 0);
 
-    const withDur = rows.filter(
-      (r) => (r.durationSec ?? 0) > 0 && (r.correctTotal ?? 0) > 0
+    const withDur = rows.filter((r) => (r.durationSec ?? 0) > 0 && (r.correctTotal ?? 0) > 0);
+    const apmList = withDur.map((r) => (60 * (r.correctTotal as number)) / (r.durationSec as number));
+    const apmAvg = apmList.length ? Math.round((apmList.reduce((a, b) => a + b, 0) / apmList.length) * 10) / 10 : 0;
+    const apmBest = apmList.length ? Math.round(Math.max(...apmList) * 10) / 10 : 0;
+
+    const totalCorrect = rows.reduce((s, r) => s + (r.correctTotal ?? 0), 0);
+
+    return { games, bestRecent, avg, p90, prLevel, prStreak, apmAvg, apmBest, totalCorrect };
+  }, [rows]);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ★ BIN 상세 통계: 최근 50판 (opCat='BIN', 시간필드는 ts 또는 createdAt 우선순위)
+───────────────────────────────────────────────────────────── */
+type ScoreAggBIN = {
+  score: number;
+  levelMax?: number;
+  streakMax?: number;
+  correctTotal?: number;
+  durationSec?: number;
+  createdAt?: any;
+  ts?: any;
+  opCat?: string;
+};
+
+async function fetchRecentFallbackBIN(uid: string, n = 50) {
+  try {
+    const s = await getDocs(
+      query(collection(db, "scores"), where("uid", "==", uid), where("mode", "==", "BIN"), limit(n * 3))
     );
-    const apmList = withDur.map(
-      (r) => (60 * (r.correctTotal as number)) / (r.durationSec as number)
+    const rows = s.docs.map((d) => d.data() as ScoreAggBIN);
+    const filtered = rows.filter((r) => (r.opCat ?? "BIN") === "BIN");
+    filtered.sort((a, b) => {
+      const ta = a.ts?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
+      const tb = b.ts?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
+      return tb - ta;
+    });
+    return filtered.slice(0, n);
+  } catch (e) {
+    console.error("[useBinStats fallback] getDocs error", e);
+    return [] as ScoreAggBIN[];
+  }
+}
+
+function useBinStats(uid: string | null | undefined) {
+  const [rows, setRows] = React.useState<ScoreAggBIN[]>([]);
+
+  React.useEffect(() => {
+    if (!uid) return;
+    const qMain = query(
+      collection(db, "scores"),
+      where("uid", "==", uid),
+      where("mode", "==", "BIN"),
+      where("opCat", "==", "BIN"),
+      // 프로젝트에 따라 ts 또는 createdAt 인덱스가 있을 수 있음: ts 우선
+      orderBy("ts", "desc"),
+      limit(50)
     );
-    const apmAvg = apmList.length
-      ? Math.round(
-          (apmList.reduce((a, b) => a + b, 0) / apmList.length) * 10
-        ) / 10
-      : 0;
-    const apmBest = apmList.length
-      ? Math.round(Math.max(...apmList) * 10) / 10
+
+    const unsub = onSnapshot(
+      qMain,
+      async (snap) => {
+        let data: ScoreAggBIN[] = [];
+        snap.forEach((d) => data.push(d.data() as ScoreAggBIN));
+        if (data.length === 0) {
+          data = await fetchRecentFallbackBIN(uid, 50);
+        }
+        setRows(data);
+      },
+      async (_err) => {
+        const fb = await fetchRecentFallbackBIN(uid, 50);
+        setRows(fb);
+      }
+    );
+    return () => unsub();
+  }, [uid]);
+
+  return React.useMemo(() => {
+    const games = rows.length;
+    const scores = rows.map((r) => r.score);
+    const bestRecent = scores.length ? Math.max(...scores) : 0;
+    const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    const p90 = scores.length
+      ? Math.round([...scores].sort((a, b) => a - b)[Math.floor((scores.length - 1) * 0.9)])
       : 0;
 
-    const totalCorrect = rows.reduce(
-      (s, r) => s + (r.correctTotal ?? 0),
-      0
-    );
+    const prLevel = rows.reduce((m, r) => Math.max(m, r.levelMax ?? 0), 0);
+    const prStreak = rows.reduce((m, r) => Math.max(m, r.streakMax ?? 0), 0);
 
-    return {
-      games,
-      bestRecent,
-      avg,
-      p90,
-      prLevel,
-      prStreak,
-      apmAvg,
-      apmBest,
-      totalCorrect,
-    };
+    const withDur = rows.filter((r) => (r.durationSec ?? 0) > 0 && (r.correctTotal ?? 0) > 0);
+    const apmList = withDur.map((r) => (60 * (r.correctTotal as number)) / (r.durationSec as number));
+    const apmAvg = apmList.length ? Math.round((apmList.reduce((a, b) => a + b, 0) / apmList.length) * 10) / 10 : 0;
+    const apmBest = apmList.length ? Math.round(Math.max(...apmList) * 10) / 10 : 0;
+
+    const totalCorrect = rows.reduce((s, r) => s + (r.correctTotal ?? 0), 0);
+
+    return { games, bestRecent, avg, p90, prLevel, prStreak, apmAvg, apmBest, totalCorrect };
   }, [rows]);
 }
 
@@ -203,13 +283,19 @@ function ModeStatsCards({
   stats,
 }: {
   mode: Mode;
-  stats: ReturnType<typeof useModeStats>;
+  stats: ReturnType<typeof useModeStats> | ReturnType<typeof useBinStats>;
 }) {
+  const title =
+    mode === "TIMED"
+      ? "일반 (60초)"
+      : mode === "HARD"
+      ? "하드 (60초)"
+      : "2진수 변환";
+
   return (
     <div className="space-y-2">
       <div className="text-xs text-slate-600 font-semibold">
-        {mode === "TIMED" ? "일반 (60초)" : "하드 (60초)"} — 상세 통계 (최근 50판,
-        ALL)
+        {title} — 상세 통계 (최근 50판{mode === "BIN" ? "" : ", ALL"})
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <StatCard label="게임 수" value={stats.games} />
@@ -227,11 +313,9 @@ function ModeStatsCards({
 }
 
 /* ─────────────────────────────────────────────────────────────
-   닉네임 업데이트 (users 컬렉션 경로는 subscribeUserProfile와 동일해야 함)
+   닉네임 업데이트
 ───────────────────────────────────────────────────────────── */
 async function updateUserName(uid: string, newName: string) {
-  // UserProfile이 저장된 경로가 "users/{uid}"라고 가정
-  // (프로젝트에서 실제로 쓰는 경로와 반드시 일치해야 함)
   const ref = doc(db, "users", uid);
   await updateDoc(ref, { name: newName });
 }
@@ -242,7 +326,6 @@ async function updateUserName(uid: string, newName: string) {
 export default function MyPage() {
   const { uid: paramUid } = useParams<{ uid?: string }>();
 
-  // user === undefined -> 로딩중, null -> 비로그인, User -> 로그인완료
   const [user, setUser] = React.useState<User | null | undefined>(undefined);
   React.useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
@@ -253,14 +336,10 @@ export default function MyPage() {
   const targetUid = paramUid ?? selfUid;
   const isSelf = !paramUid || paramUid === selfUid;
 
-  // 데이터 상태
   const [profile, setProfile] = React.useState<UserProfile | null>(null);
   const [friends, setFriends] = React.useState<Friend[]>([]);
-  const [friendProfiles, setFriendProfiles] = React.useState<
-    Record<string, { name: string; tag: string }>
-  >({});
+  const [friendProfiles, setFriendProfiles] = React.useState<Record<string, { name: string; tag: string }>>({});
 
-  // 프로필/친구 구독
   React.useEffect(() => {
     if (!targetUid) return;
     const unsub = subscribeUserProfile(targetUid, setProfile);
@@ -289,13 +368,14 @@ export default function MyPage() {
   // 최고점 / 상세 통계
   const bestTimed = useBestAll(targetUid, "TIMED");
   const bestHard = useBestAll(targetUid, "HARD");
+  const bestBin = useBestBIN(targetUid);                              // ★ BIN 최고점
+
   const statsTimed = useModeStats(targetUid, "TIMED");
   const statsHard = useModeStats(targetUid, "HARD");
+  const statsBin = useBinStats(targetUid);                            // ★ BIN 상세통계
 
-  // 닉네임 편집 상태
   const [editing, setEditing] = React.useState(false);
   const [newName, setNewName] = React.useState("");
-
   const canEdit = isSelf && !!selfUid;
 
   const onSaveName = async () => {
@@ -308,11 +388,9 @@ export default function MyPage() {
       setNewName("");
     } catch (e) {
       console.error(e);
-      // 필요하면 토스트 연결
     }
   };
 
-  // 1) 로딩중: onAuthStateChanged 대기 (자기 페이지일 때만 로딩 표시)
   if (!paramUid && user === undefined) {
     return (
       <Card>
@@ -328,12 +406,10 @@ export default function MyPage() {
     );
   }
 
-  // 2) 자기 페이지인데 로그인 안 됨
   if (!paramUid && !selfUid) {
     return <div className="text-sm text-[--fg]/60">로그인이 필요합니다.</div>;
   }
 
-  // 3) 본문
   return (
     <Card>
       <CardHeader>
@@ -352,17 +428,8 @@ export default function MyPage() {
                 placeholder="새 닉네임"
                 className="h-8 text-sm"
               />
-              <Button size="sm" onClick={onSaveName}>
-                저장
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setEditing(false);
-                  setNewName("");
-                }}
-              >
+              <Button size="sm" onClick={onSaveName}>저장</Button>
+              <Button size="sm" variant="outline" onClick={() => { setEditing(false); setNewName(""); }}>
                 취소
               </Button>
             </div>
@@ -375,10 +442,7 @@ export default function MyPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    setEditing(true);
-                    setNewName(profile?.name ?? "");
-                  }}
+                  onClick={() => { setEditing(true); setNewName(profile?.name ?? ""); }}
                 >
                   닉네임 변경
                 </Button>
@@ -387,8 +451,8 @@ export default function MyPage() {
           )}
         </section>
 
-        {/* 최고 점수 (TIMED/HARD, ALL만) */}
-        <section className="grid grid-cols-2 gap-3">
+        {/* 최고 점수 (TIMED/HARD ALL + ★ BIN) */}
+        <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div className="rounded-lg border p-3 bg-white">
             <div className="text-xs text-slate-500">일반 (60초) — ALL</div>
             <div className="text-2xl font-extrabold tabular-nums">{bestTimed}</div>
@@ -397,12 +461,17 @@ export default function MyPage() {
             <div className="text-xs text-slate-500">하드 (60초) — ALL</div>
             <div className="text-2xl font-extrabold tabular-nums">{bestHard}</div>
           </div>
+          <div className="rounded-lg border p-3 bg-white">
+            <div className="text-xs text-slate-500">2진수 변환 — BIN</div>
+            <div className="text-2xl font-extrabold tabular-nums">{bestBin}</div>
+          </div>
         </section>
 
-        {/* 상세 통계 (최근 50판, ALL) */}
+        {/* 상세 통계 (최근 50판) */}
         <section className="space-y-4">
           <ModeStatsCards mode="TIMED" stats={statsTimed} />
-          <ModeStatsCards mode="HARD" stats={statsHard} />
+          <ModeStatsCards mode="HARD"  stats={statsHard} />
+          <ModeStatsCards mode="BIN"   stats={statsBin} />   {/* ★ BIN 카드 */}
         </section>
 
         {/* 추이 그래프 */}

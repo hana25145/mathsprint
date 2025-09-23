@@ -38,7 +38,7 @@ const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
 
 const START_TIME = 60;
 const START_TIME_HARD = 300;
-const TIME_CAP = 150;
+const TIME_CAP = 10000000;
 
 const OP_SCORE_MULT: Record<Op, number> = { "×": 1.30, "÷": 1.15, "-": 1.05, "+": 1.00 };
 const TIME_ON_CORRECT_BASE: Record<Op, number> = { "×": 2, "÷": 2, "-": 1, "+": 1 };
