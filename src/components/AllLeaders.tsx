@@ -15,11 +15,22 @@ import {
   DocumentSnapshot,
 } from "firebase/firestore";
 
-type Mode = "TIMED" | "HARD";
-type OpCat = "ALL" | "ADD" | "SUB" | "MUL" | "DIV";
+type Mode = "TIMED" | "HARD" | "BIN";                  // ★ BIN 추가
+type OpCat = "ALL" | "ADD" | "SUB" | "MUL" | "DIV" | "BIN"; // ★ BIN 추가
 
-const MODE_LABEL: Record<Mode, string> = { TIMED: "일반(60초)", HARD: "하드(60초)" };
-const OPCAT_LABEL: Record<OpCat, string> = { ALL: "전체 연산자", ADD: "+", SUB: "−", MUL: "×", DIV: "÷" };
+const MODE_LABEL: Record<Mode, string> = {
+  TIMED: "일반(60초)",
+  HARD: "하드(60초)",
+  BIN: "2진수 변환",                                      // ★ BIN 라벨
+};
+const OPCAT_LABEL: Record<OpCat, string> = {
+  ALL: "전체 연산자",
+  ADD: "+",
+  SUB: "−",
+  MUL: "×",
+  DIV: "÷",
+  BIN: "2진수",                                          // ★ BIN 라벨
+};
 
 type RowStored = { uid?: string; name?: string; tag?: string; best?: number };
 type RowView = { uid?: string; name: string; tag?: string; best: number };
@@ -35,8 +46,13 @@ export default function AllLeaders() {
   const [loading, setLoading] = React.useState(false);
   const [exhausted, setExhausted] = React.useState(false);
 
+  // ★ 쿼리에서 사용할 opCat( BIN 모드면 항상 "BIN")
+  const effectiveOpCat: OpCat = mode === "BIN" ? "BIN" : opCat;
+
   React.useEffect(() => {
-    setSp({ mode, op: opCat }, { replace: true });
+    // ★ URL 파라미터 동기화 (BIN 모드면 op=BIN 고정)
+    setSp({ mode, op: effectiveOpCat }, { replace: true });
+
     (async () => {
       setLoading(true);
       setRows([]);
@@ -46,7 +62,7 @@ export default function AllLeaders() {
         const q0 = query(
           collection(db, "leaders"),
           where("mode", "==", mode),
-          where("opCat", "==", opCat),
+          where("opCat", "==", effectiveOpCat),
           orderBy("best", "desc"),
           limit(PAGE)
         );
@@ -62,28 +78,23 @@ export default function AllLeaders() {
         setLoading(false);
       }
     })();
-  }, [mode, opCat, setSp]);
+    // mode 또는 opCat가 바뀌면 재조회 (BIN에서는 effectiveOpCat이 항상 "BIN")
+  }, [mode, opCat, effectiveOpCat, setSp]);
 
   const loadMore = async () => {
     if (loading || exhausted) return;
     setLoading(true);
     try {
+      const baseQuery = [
+        collection(db, "leaders"),
+        where("mode", "==", mode),
+        where("opCat", "==", effectiveOpCat),
+        orderBy("best", "desc"),
+      ] as const;
+
       const qMore = cursor
-        ? query(
-            collection(db, "leaders"),
-            where("mode", "==", mode),
-            where("opCat", "==", opCat),
-            orderBy("best", "desc"),
-            startAfter(cursor),
-            limit(PAGE)
-          )
-        : query(
-            collection(db, "leaders"),
-            where("mode", "==", mode),
-            where("opCat", "==", opCat),
-            orderBy("best", "desc"),
-            limit(PAGE)
-          );
+        ? query(...baseQuery, startAfter(cursor), limit(PAGE))
+        : query(...baseQuery, limit(PAGE));
 
       const s = await getDocs(qMore);
       const r: RowView[] = s.docs.map((d) => {
@@ -135,9 +146,9 @@ export default function AllLeaders() {
       </CardHeader>
 
       <CardContent className="p-4 space-y-4">
-        {/* 필터 */}
+        {/* 필터 (디자인 유지) */}
         <div className="flex flex-wrap gap-2">
-          {(["TIMED", "HARD"] as Mode[]).map((m) => (
+          {(["TIMED", "HARD", "BIN"] as Mode[]).map((m) => (           // ★ BIN 모드 버튼 추가
             <Button
               key={m}
               onClick={() => setMode(m)}
@@ -147,20 +158,34 @@ export default function AllLeaders() {
               {MODE_LABEL[m]}
             </Button>
           ))}
+
           <div className="mx-1 h-8 w-px bg-slate-200" />
-          {(["ALL", "ADD", "SUB", "MUL", "DIV"] as OpCat[]).map((c) => (
+
+          {/* 연산자 필터: BIN 모드에서는 '2진수' 단일 버튼만 표시(디자인 동일) */}
+          {mode !== "BIN" ? (
+            (["ALL", "ADD", "SUB", "MUL", "DIV"] as OpCat[]).map((c) => (
+              <Button
+                key={c}
+                onClick={() => setOpCat(c)}
+                variant={effectiveOpCat === c ? "default" : "outline"}
+                className="h-8 rounded-md px-3 text-sm shadow-sm"
+              >
+                {OPCAT_LABEL[c]}
+              </Button>
+            ))
+          ) : (
             <Button
-              key={c}
-              onClick={() => setOpCat(c)}
-              variant={opCat === c ? "default" : "outline"}
+              key="BIN"
+              variant="default"
               className="h-8 rounded-md px-3 text-sm shadow-sm"
+              disabled
             >
-              {OPCAT_LABEL[c]}
+              {OPCAT_LABEL.BIN}
             </Button>
-          ))}
+          )}
         </div>
 
-        {/* 표: 외곽선 제거, 섹션 톤만 분리 */}
+        {/* 표 */}
         <div className="rounded-xl bg-white shadow-sm overflow-hidden">
           <div className="grid grid-cols-[64px_1fr_120px] px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-50">
             <div>#</div>

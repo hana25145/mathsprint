@@ -14,14 +14,16 @@ const db = admin.firestore();
 const allowedOrigins = [
   "https://mathsprint-ochre.vercel.app", // Vercel 배포
   "http://localhost:5173",              // 로컬 개발
-  "http://localhost:5174"               // 로컬 다른 포트
+  "http://localhost:5174",
+  "https://mathsprint-584a1.web.app",
+  "https://mathsprint-584a1.firebaseapp.com",           // 로컬 다른 포트
 ];
 
 // ⬇️ 환경변수로 밴 목록 관리(쉼표 구분). 비워두면 효과 없음.
 const BANNED_EMAILS = new Set([
   "jinhyung110@gmail.com",
   "has_25038@hana.hs.kr",
-  "hackerman@example.com",
+  "wqq69320@gmail.com",
 ].map(s => s.toLowerCase()));
 const BANNED_DOMAINS = new Set(
   (process.env.BANNED_DOMAINS || "")

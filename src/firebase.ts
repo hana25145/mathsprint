@@ -50,6 +50,28 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+// --- API_BASE 분기 ---
+const VERCEL_ORIGIN = "https://mathsprint-ochre.vercel.app";
+
+function resolveApiBase(): string {
+  if (typeof window === "undefined") return "";
+  const h = window.location.hostname;
+
+  // Firebase Hosting → Vercel API 사용
+  if (h.endsWith(".web.app") || h.endsWith(".firebaseapp.com")) {
+    return VERCEL_ORIGIN;
+  }
+  // 그 외(localhost, vercel 등) → same-origin
+  return "";
+}
+
+export const API_BASE = resolveApiBase();
+
+// 디버그 로그 (배포 후 콘솔에서 확인 가능)
+if (typeof window !== "undefined") {
+  console.info("[API_BASE]", API_BASE || "(same-origin)", "from", window.location.origin);
+}
+
 // ─────────────────────────────────────────────────────────────
 // 1) 타입
 export type UserProfile = {
@@ -402,10 +424,7 @@ async function getIdTokenOrThrow(): Promise<string> {
   return user.getIdToken();
 }
 
-const API_BASE =
-  (import.meta as any).env?.VITE_API_BASE ??
-  process.env.NEXT_PUBLIC_API_BASE ??
-  ""; // ""면 동일 오리진 사용: /api/submitScore
+
 
 export async function submitScoreSafe(payload: {
   score: number;

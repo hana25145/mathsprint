@@ -5,11 +5,22 @@ import { db, subscribeUserProfile } from "@/firebase";
 import { collection, query, where, orderBy, limit, onSnapshot, getDocs } from "firebase/firestore";
 import { Link } from "react-router-dom";
 
-type Mode = "TIMED" | "HARD";
-type OpCat = "ALL" | "ADD" | "SUB" | "MUL" | "DIV";
+type Mode = "TIMED" | "HARD" | "BIN";                         // ★ BIN 포함
+type OpCat = "ALL" | "ADD" | "SUB" | "MUL" | "DIV" | "BIN";   // ★ BIN 포함
 
-const MODE_LABEL: Record<Mode, string> = { TIMED: "일반(60초)", HARD: "하드(60초)" };
-const OPCAT_LABEL: Record<OpCat, string> = { ALL: "전체 연산자", ADD: "+", SUB: "−", MUL: "×", DIV: "÷" };
+const MODE_LABEL: Record<Mode, string> = {
+  TIMED: "일반(60초)",
+  HARD: "하드(60초)",
+  BIN: "2진수 변환",                                           // ★ BIN 라벨
+};
+const OPCAT_LABEL: Record<OpCat, string> = {
+  ALL: "전체 연산자",
+  ADD: "+",
+  SUB: "−",
+  MUL: "×",
+  DIV: "÷",
+  BIN: "2진수",                                               // ★ BIN 라벨
+};
 
 type RowStored = { uid?: string; name?: string; tag?: string; best?: number };
 type RowView   = { uid?: string; name: string; tag?: string; score: number };
@@ -78,10 +89,14 @@ export default function Leaderboard() {
   const [opCat, setOpCat] = useState<OpCat>("ALL");
   const [rows, setRows] = useState<RowView[]>([]);
 
+  // ★ BIN 모드일 때는 opCat을 강제로 "BIN"으로 사용
+  const effectiveOpCat: OpCat = mode === "BIN" ? "BIN" : opCat;
+
   useEffect(() => {
-    const unsub = subscribeTop10SegmentSafe(mode, opCat, setRows);
+    // ★ 구독 시에도 effectiveOpCat 사용 (BIN일 때 "BIN" 고정)
+    const unsub = subscribeTop10SegmentSafe(mode, effectiveOpCat, setRows);
     return () => unsub?.();
-  }, [mode, opCat]);
+  }, [mode, effectiveOpCat]);
 
   // 실시간 프로필 조인
   const uids = useMemo(
@@ -112,7 +127,7 @@ export default function Leaderboard() {
       <CardHeader className="flex items-center justify-between px-4 py-3 bg-slate-50">
         <CardTitle className="text-base font-semibold tracking-tight">리더보드</CardTitle>
         <Link
-          to={`/leaders?mode=${mode}&op=${opCat}`}
+          to={`/leaders?mode=${mode}&op=${effectiveOpCat}`}  // ★ 링크에도 effectiveOpCat 반영
           className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-white shadow-sm hover:bg-slate-100 transition"
           title="전체 리더보드 보기"
         >
@@ -121,9 +136,9 @@ export default function Leaderboard() {
       </CardHeader>
 
       <CardContent className="p-4 space-y-3">
-        {/* 필터 */}
+        {/* 필터: 모드 (디자인 유지, BIN 버튼 추가) */}
         <div className="flex gap-2">
-          {(["TIMED", "HARD"] as Mode[]).map((m) => (
+          {(["TIMED", "HARD", "BIN"] as Mode[]).map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
@@ -136,18 +151,29 @@ export default function Leaderboard() {
           ))}
         </div>
 
+        {/* 연산자 필터: BIN 모드일 때는 '2진수' 단일 표시 */}
         <div className="flex gap-2">
-          {(["ALL", "ADD", "SUB", "MUL", "DIV"] as OpCat[]).map((c) => (
+          {mode !== "BIN" ? (
+            (["ALL", "ADD", "SUB", "MUL", "DIV"] as OpCat[]).map((c) => (
+              <button
+                key={c}
+                onClick={() => setOpCat(c)}
+                className={`h-8 rounded-md px-3 text-sm shadow-sm ${
+                  opCat === c ? "bg-slate-900 text-white" : "bg-white"
+                }`}
+              >
+                {OPCAT_LABEL[c]}
+              </button>
+            ))
+          ) : (
             <button
-              key={c}
-              onClick={() => setOpCat(c)}
-              className={`h-8 rounded-md px-3 text-sm shadow-sm ${
-                opCat === c ? "bg-slate-900 text-white" : "bg-white"
-              }`}
+              key="BIN"
+              className="h-8 rounded-md px-3 text-sm shadow-sm bg-slate-900 text-white"
+              disabled
             >
-              {OPCAT_LABEL[c]}
+              {OPCAT_LABEL.BIN}
             </button>
-          ))}
+          )}
         </div>
 
         {/* 리스트: 외곽선 없이 divide-y로만 구분 */}
