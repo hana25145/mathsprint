@@ -17,6 +17,19 @@ const allowedOrigins = [
   "http://localhost:5174"               // 로컬 다른 포트
 ];
 
+// ⬇️ 환경변수로 밴 목록 관리(쉼표 구분). 비워두면 효과 없음.
+const BANNED_EMAILS = new Set([
+  "jinhyung110@gmail.com",
+  "has_25038@hana.hs.kr",
+  "hackerman@example.com",
+].map(s => s.toLowerCase()));
+const BANNED_DOMAINS = new Set(
+  (process.env.BANNED_DOMAINS || "")
+    .split(",")
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean)
+);
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
 
@@ -44,7 +57,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { authToken, score, mode, levelMax, streakMax, correctTotal, durationSec, opCat } = req.body;
+    const {
+      authToken, score, mode, levelMax, streakMax, correctTotal, durationSec, opCat
+    } = req.body;
 
     if (!authToken) {
       return res.status(401).json({ error: "로그인 토큰 없음" });
@@ -53,6 +68,20 @@ export default async function handler(req, res) {
     // 🔑 Firebase ID 토큰 검증
     const decoded = await admin.auth().verifyIdToken(authToken);
     const uid = decoded.uid;
+    const email = (decoded.email || "").toLowerCase();
+    const domain = email.split("@")[1] || "";
+
+    // 🚫 이메일/도메인 밴 체크 (로그인 성공이어도 서버에서 차단)
+    if (email && (BANNED_EMAILS.has(email) || BANNED_DOMAINS.has(domain))) {
+      // (선택) 재로그인 방지를 위해 계정 비활성화 + 토큰 무효화
+      try {
+        await admin.auth().updateUser(uid, { disabled: true });
+        await admin.auth().revokeRefreshTokens(uid);
+      } catch (e) {
+        console.warn("ban-side-effect failed:", e?.message);
+      }
+      return res.status(403).json({ error: "banned" });
+    }
 
     // 🧑 사용자 프로필
     const userSnap = await db.collection("users").doc(uid).get();
@@ -82,35 +111,19 @@ export default async function handler(req, res) {
       const snap = await t.get(leaderRef);
       const prevBest = snap.exists ? snap.data().best || 0 : 0;
 
-      if (score > prevBest) {
-        t.set(
-          leaderRef,
-          {
-            uid,
-            best: score,
-            mode,
-            opCat,
-            name,
-            tag,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-      } else {
-        t.set(
-          leaderRef,
-          {
-            uid,
-            best: prevBest,
-            mode,
-            opCat,
-            name,
-            tag,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
+      t.set(
+        leaderRef,
+        {
+          uid,
+          best: score > prevBest ? score : prevBest,
+          mode,
+          opCat,
+          name,
+          tag,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
     });
 
     return res.status(200).json({ ok: true, id: ref.id });
